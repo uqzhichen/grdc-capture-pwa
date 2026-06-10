@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#005c3d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="GRDC Capture">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>GRDC Capture</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="apple-touch-icon" href="./icons/icon-192.png">
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Glasshouse imaging</p>
+          <h1>GRDC Capture</h1>
+        </div>
+        <div class="status-strip" aria-live="polite">
+          <span class="status-pill" id="networkStatus">Checking</span>
+          <span class="status-pill" id="captureCount">0 captures</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel capture-panel" aria-labelledby="captureTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Step 1</p>
+              <h2 id="captureTitle">Capture Image</h2>
+            </div>
+            <button class="icon-button" id="installButton" type="button" hidden title="Install app" aria-label="Install app">
+              <span aria-hidden="true">+</span>
+            </button>
+          </div>
+
+          <div class="field-grid">
+            <label class="field span-2">
+              <span>Search pot</span>
+              <input id="potSearch" type="search" autocomplete="off" placeholder="POC-001, NFNB, Maximus, rep 1">
+            </label>
+            <label class="field span-2">
+              <span>Pot ID</span>
+              <select id="potSelect"></select>
+            </label>
+          </div>
+
+          <article class="pot-card" id="potCard">
+            <div>
+              <p class="pot-id">No pot loaded</p>
+              <p class="pot-meta">Load the pot map to start.</p>
+            </div>
+          </article>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>Week</span>
+              <select id="weekSelect">
+                <option>W1</option>
+                <option>W2</option>
+                <option>W3</option>
+                <option selected>W4</option>
+                <option>W5</option>
+                <option>W6</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Camera</span>
+              <select id="cameraSelect">
+                <option>CAM1</option>
+                <option>CAM2</option>
+                <option>CAM3</option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset class="segmented" aria-label="Image type">
+            <legend>Image type</legend>
+            <label><input type="radio" name="mode" value="Whole plant" checked><span>Whole Plant</span></label>
+            <label><input type="radio" name="mode" value="Focused leaf"><span>Focused Leaf</span></label>
+          </fieldset>
+
+          <div id="wholePlantFields">
+            <fieldset class="choice-grid" aria-label="Direction">
+              <legend>Direction</legend>
+              <label><input type="radio" name="angle" value="FRONT" checked><span>Front</span></label>
+              <label><input type="radio" name="angle" value="RIGHT"><span>Right</span></label>
+              <label><input type="radio" name="angle" value="BACK"><span>Back</span></label>
+              <label><input type="radio" name="angle" value="LEFT"><span>Left</span></label>
+            </fieldset>
+
+            <fieldset class="choice-grid" aria-label="Height level">
+              <legend>Height</legend>
+              <label><input type="radio" name="height" value="H1" checked><span>H1 High</span></label>
+              <label><input type="radio" name="height" value="H2"><span>H2 Mid</span></label>
+              <label><input type="radio" name="height" value="H3"><span>H3 Low</span></label>
+            </fieldset>
+          </div>
+
+          <div id="focusedLeafFields" hidden>
+            <fieldset class="choice-grid" aria-label="Affected leaf">
+              <legend>Affected leaf</legend>
+              <label><input type="radio" name="focusedLeaf" value="FL1" checked><span>Leaf 1</span></label>
+              <label><input type="radio" name="focusedLeaf" value="FL2"><span>Leaf 2</span></label>
+              <label><input type="radio" name="focusedLeaf" value="FL3"><span>Leaf 3</span></label>
+            </fieldset>
+            <p class="helper-text">Choose any three affected leaves from the pot. If fewer than three affected leaves are visible, use the notes field.</p>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>Quality flag</span>
+              <select id="qualitySelect">
+                <option>OK</option>
+                <option>blurry</option>
+                <option>overexposed</option>
+                <option>label_missing</option>
+                <option>wrong_angle</option>
+                <option>symptom_absent</option>
+                <option>partial_symptom</option>
+                <option>other</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Notes</span>
+              <input id="notesInput" type="text" autocomplete="off" placeholder="Optional">
+            </label>
+          </div>
+
+          <div class="filename-box">
+            <span>Filename preview</span>
+            <strong id="filenamePreview">-</strong>
+          </div>
+
+          <div class="button-row">
+            <button class="primary-button" id="captureButton" type="button">Capture Photo</button>
+            <button class="secondary-button" id="importButton" type="button">Import Photo</button>
+          </div>
+
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+          <input id="importInput" type="file" accept="image/*" hidden>
+        </section>
+
+        <section class="panel manage-panel" aria-labelledby="manageTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Step 2</p>
+              <h2 id="manageTitle">Manage Captures</h2>
+            </div>
+            <button class="secondary-button compact" id="refreshButton" type="button">Refresh</button>
+          </div>
+
+          <div class="summary-grid">
+            <div>
+              <span>Today</span>
+              <strong id="todayCount">0</strong>
+            </div>
+            <div>
+              <span>Total</span>
+              <strong id="totalCount">0</strong>
+            </div>
+            <div>
+              <span>Storage</span>
+              <strong id="storageEstimate">-</strong>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label class="field span-2">
+              <span>Search captures</span>
+              <input id="captureSearch" type="search" autocomplete="off" placeholder="filename, pot, flag, notes">
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button class="secondary-button" id="exportTodayButton" type="button">Export Today ZIP</button>
+            <button class="secondary-button" id="exportFilteredButton" type="button">Export Filtered ZIP</button>
+            <button class="secondary-button" id="exportAllButton" type="button">Export All ZIP</button>
+          </div>
+
+          <div class="capture-list" id="captureList" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <dialog id="editDialog">
+        <form method="dialog" class="dialog-card">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Capture record</p>
+              <h2>Edit Capture</h2>
+            </div>
+            <button class="icon-button" value="cancel" aria-label="Close" title="Close">x</button>
+          </div>
+          <img id="editImage" alt="Selected capture preview">
+          <p class="dialog-filename" id="editFilename"></p>
+          <label class="field">
+            <span>Quality flag</span>
+            <select id="editQuality"></select>
+          </label>
+          <label class="field">
+            <span>Notes</span>
+            <textarea id="editNotes" rows="3"></textarea>
+          </label>
+          <div class="button-row">
+            <button class="primary-button" id="saveEditButton" value="default" type="submit">Save</button>
+            <button class="danger-button" id="deleteCaptureButton" value="delete" type="button">Delete</button>
+          </div>
+        </form>
+      </dialog>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

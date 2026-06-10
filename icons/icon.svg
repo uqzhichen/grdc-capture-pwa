@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="GRDC Capture icon">
+  <rect width="512" height="512" rx="96" fill="#005c3d"/>
+  <path d="M112 332c50 30 97 30 140 0 44-30 92-30 148 0v52c-56-30-104-30-148 0-43 30-90 30-140 0z" fill="#79c99e"/>
+  <path d="M126 186h260c19 0 34 15 34 34v98c0 19-15 34-34 34H126c-19 0-34-15-34-34v-98c0-19 15-34 34-34z" fill="#f7fbf9"/>
+  <path d="M160 166h61l18 20H142z" fill="#f7fbf9"/>
+  <circle cx="256" cy="270" r="62" fill="#0e8271"/>
+  <circle cx="256" cy="270" r="39" fill="#d9f1e7"/>
+  <circle cx="256" cy="270" r="18" fill="#005c3d"/>
+  <path d="M352 223h36v28h-36z" fill="#0e8271"/>
+  <path d="M160 395h192v26H160z" fill="#f7fbf9" opacity=".92"/>
+</svg>
