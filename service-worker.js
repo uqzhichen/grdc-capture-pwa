@@ -1,9 +1,9 @@
-const CACHE_NAME = "grdc-capture-pwa-v1";
+const CACHE_NAME = "grdc-capture-pwa-v2";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css",
-  "./app.js",
+  "./styles.css?v=2",
+  "./app.js?v=2",
   "./manifest.webmanifest",
   "./data/pot_map.csv",
   "./icons/icon.svg",

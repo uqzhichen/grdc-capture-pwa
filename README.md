@@ -4,11 +4,11 @@ Static Progressive Web App for glasshouse image capture. It is designed for GitH
 
 ## What It Does
 
-- Loads the 192-pot factorial map from `data/pot_map.csv`.
+- Loads the 192-pot factorial map from `data/pot_map.csv`, separated into two 96-pot temperature runs.
 - Captures or imports phone photos.
 - Saves photos locally in browser storage with controlled filenames.
 - Lets technicians search, review, edit quality flags/notes, and delete blurry captures.
-- Exports today, filtered, or all captures as a ZIP package containing `capture_log.csv`, `pot_map.csv`, and image files.
+- Exports today, filtered, or all captures as a ZIP package containing `capture_log.csv`, `pot_map.csv`, and image files. Today and filtered exports are limited to the selected temperature run.
 - Caches the app shell for offline use after the first successful load.
 
 ## Technician Install
@@ -70,7 +70,9 @@ The bundled map uses:
 - Varieties: Maximus CL, RGT Planet, Rosalind, AGT Bunyip IA.
 - Disease classes: CTRL, NFNB, SFNB.
 - Fertiliser levels: LOW, HIGH.
-- Temperature regimes: Cool/Winter, Warm/Summer.
+- Temperature regimes: Cool/Winter and Warm/Summer, selected separately in the app as 96-pot runs.
 - Replicates: 1, 2, 3, 4.
 
-Total: `4 x 3 x 2 x 2 x 4 = 192` pots.
+Total: `4 x 3 x 2 x 2 x 4 = 192` pots, implemented as `96 WINTER + 96 SUMMER`.
+
+The app defaults to one active temperature run at a time. `POC-001` to `POC-096` are Winter/Cool and `POC-097` to `POC-192` are Summer/Warm.

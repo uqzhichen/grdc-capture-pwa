@@ -25,6 +25,7 @@ const els = {
   networkStatus: document.querySelector("#networkStatus"),
   captureCount: document.querySelector("#captureCount"),
   installButton: document.querySelector("#installButton"),
+  runSelect: document.querySelector("#runSelect"),
   potSearch: document.querySelector("#potSearch"),
   potSelect: document.querySelector("#potSelect"),
   potCard: document.querySelector("#potCard"),
@@ -90,6 +91,13 @@ function bindEvents() {
     els.installButton.hidden = true;
   });
 
+  els.runSelect.addEventListener("change", () => {
+    renderPotOptions();
+    updatePotCard();
+    updateFilenamePreview();
+    renderCounts();
+    renderCaptureList();
+  });
   els.potSearch.addEventListener("input", () => {
     renderPotOptions();
     updatePotCard();
@@ -196,6 +204,7 @@ async function loadPotMap() {
   state.pots = rows
     .map((row) => Object.fromEntries(header.map((key, index) => [key, row[index] || ""])))
     .filter((record) => record.pot_id);
+  renderRunOptions();
   renderPotOptions();
   updatePotCard();
   updateFilenamePreview();
@@ -237,10 +246,46 @@ function parseCSV(text) {
   return rows;
 }
 
+function renderRunOptions() {
+  const current = els.runSelect.value;
+  const counts = new Map();
+  for (const pot of state.pots) {
+    counts.set(pot.temperature_regime, (counts.get(pot.temperature_regime) || 0) + 1);
+  }
+  const runs = Array.from(counts.keys()).filter(Boolean);
+  els.runSelect.replaceChildren(...runs.map((run) => {
+    const option = document.createElement("option");
+    option.value = run;
+    option.textContent = `${runLabel(run)} (${counts.get(run)} pots)`;
+    return option;
+  }));
+  els.runSelect.value = runs.includes(current) ? current : runs[0] || "";
+}
+
+function selectedRun() {
+  return els.runSelect.value || state.pots[0]?.temperature_regime || "";
+}
+
+function runLabel(regime) {
+  const code = temperatureCode(regime);
+  if (code === "WINTER") return "Winter / Cool";
+  if (code === "SUMMER") return "Summer / Warm";
+  return regime || "Unknown run";
+}
+
+function temperatureCode(regime) {
+  const value = String(regime || "").toLowerCase();
+  if (value.includes("cool") || value.includes("winter")) return "WINTER";
+  if (value.includes("warm") || value.includes("summer")) return "SUMMER";
+  return cleanComponent(regime || "RUN").toUpperCase();
+}
+
 function renderPotOptions() {
   const current = els.potSelect.value;
   const query = els.potSearch.value.trim().toLowerCase();
+  const currentRun = selectedRun();
   const filtered = state.pots.filter((pot) => {
+    if (pot.temperature_regime !== currentRun) return false;
     if (!query) return true;
     return [
       pot.pot_id,
@@ -257,9 +302,9 @@ function renderPotOptions() {
   });
 
   const selectedStillVisible = filtered.some((pot) => pot.pot_id === current);
-  const selected = selectedStillVisible ? current : filtered[0]?.pot_id || state.pots[0]?.pot_id || "";
+  const selected = selectedStillVisible ? current : filtered[0]?.pot_id || "";
 
-  els.potSelect.replaceChildren(...filtered.slice(0, 192).map((pot) => {
+  els.potSelect.replaceChildren(...filtered.slice(0, 96).map((pot) => {
     const option = document.createElement("option");
     option.value = pot.pot_id;
     option.textContent = `${pot.pot_id}  ${pot.disease_code} ${pot.variety_code} R${pot.replicate} ${pot.fertiliser_code}`;
@@ -268,8 +313,16 @@ function renderPotOptions() {
   els.potSelect.value = selected;
 }
 
+function capturesForSelectedRun() {
+  const run = selectedRun();
+  return state.captures.filter((entry) => entry.temperatureRegime === run);
+}
+
 function selectedPot() {
-  return state.pots.find((pot) => pot.pot_id === els.potSelect.value) || state.pots[0] || null;
+  return state.pots.find((pot) => pot.pot_id === els.potSelect.value && pot.temperature_regime === selectedRun())
+    || state.pots.find((pot) => pot.temperature_regime === selectedRun())
+    || state.pots[0]
+    || null;
 }
 
 function updatePotCard() {
@@ -328,6 +381,7 @@ async function handleImageInput(input) {
       heightOrLeaf: isWholePlant ? getRadioValue("height") : getRadioValue("focusedLeaf"),
       qualityFlag: els.qualitySelect.value,
       notes: els.notesInput.value.trim(),
+      temperatureCode: temperatureCode(pot.temperature_regime),
       temperatureRegime: pot.temperature_regime,
       replicate: pot.replicate,
       varietyCode: pot.variety_code,
@@ -382,13 +436,14 @@ async function refreshCaptures() {
 }
 
 function renderCounts() {
-  const today = state.captures.filter((entry) => isToday(entry.capturedAt));
+  const inRun = capturesForSelectedRun();
+  const today = inRun.filter((entry) => isToday(entry.capturedAt));
   els.todayCount.textContent = String(today.length);
-  els.totalCount.textContent = String(state.captures.length);
-  els.captureCount.textContent = `${state.captures.length} captures`;
+  els.totalCount.textContent = String(inRun.length);
+  els.captureCount.textContent = `${inRun.length} ${temperatureCode(selectedRun())} captures`;
   els.exportTodayButton.disabled = today.length === 0;
   els.exportAllButton.disabled = state.captures.length === 0;
-  els.exportFilteredButton.disabled = state.captures.length === 0;
+  els.exportFilteredButton.disabled = inRun.length === 0;
 }
 
 function renderCaptureList() {
@@ -421,7 +476,7 @@ function renderCaptureList() {
     const filename = document.createElement("strong");
     filename.textContent = entry.filename;
     const meta = document.createElement("span");
-    meta.textContent = `${entry.potID} | ${entry.mode} | ${entry.week} | ${formatShortDate(entry.capturedAt)}`;
+    meta.textContent = `${entry.potID} | ${entry.mode} | ${entry.week} | ${temperatureCode(entry.temperatureRegime)} | ${formatShortDate(entry.capturedAt)}`;
     const treatment = document.createElement("span");
     treatment.textContent = `${entry.diseaseCode || ""} ${entry.varietyCode || ""} R${entry.replicate || ""} ${entry.fertiliserCode || ""}`;
     const badge = document.createElement("span");
@@ -475,7 +530,7 @@ async function deleteActiveCapture() {
 
 async function exportCaptures(scope) {
   const entries = scope === "today"
-    ? state.captures.filter((entry) => isToday(entry.capturedAt))
+    ? capturesForSelectedRun().filter((entry) => isToday(entry.capturedAt))
     : scope === "filtered"
       ? filteredCaptures()
       : state.captures;
@@ -487,11 +542,12 @@ async function exportCaptures(scope) {
   try {
     setExportBusy(true);
     const sorted = [...entries].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+    const runLabel = scope === "all" ? "ALL_RUNS" : temperatureCode(selectedRun());
     const label = scope === "today" ? formatDate(new Date()) : scope;
     const week = cleanComponent(els.weekSelect.value.toUpperCase());
-    const packageName = `GRDC_Captures_${label}${week ? `_${week}` : ""}.zip`;
+    const packageName = `GRDC_Captures_${runLabel}_${label}${week ? `_${week}` : ""}.zip`;
     const csv = captureCSV(sorted);
-    const potMap = potMapCSV(state.pots);
+    const potMap = potMapCSV(potMapForEntries(sorted, scope));
     const files = [
       { name: "capture_log.csv", blob: new Blob([csv], { type: "text/csv" }), date: new Date() },
       { name: "pot_map.csv", blob: new Blob([potMap], { type: "text/csv" }), date: new Date() }
@@ -520,14 +576,14 @@ function setExportBusy(isBusy) {
   els.exportTodayButton.disabled = isBusy;
   els.exportFilteredButton.disabled = isBusy;
   els.exportAllButton.disabled = isBusy;
-  els.exportTodayButton.textContent = isBusy ? "Preparing ZIP" : "Export Today ZIP";
+  els.exportTodayButton.textContent = isBusy ? "Preparing ZIP" : "Export Today Run ZIP";
   els.exportFilteredButton.textContent = isBusy ? "Preparing ZIP" : "Export Filtered ZIP";
-  els.exportAllButton.textContent = isBusy ? "Preparing ZIP" : "Export All ZIP";
+  els.exportAllButton.textContent = isBusy ? "Preparing ZIP" : "Export All Runs ZIP";
 }
 
 function filteredCaptures() {
   const query = els.captureSearch.value.trim().toLowerCase();
-  return state.captures.filter((entry) => {
+  return capturesForSelectedRun().filter((entry) => {
     if (!query) return true;
     return [
       entry.filename,
@@ -539,6 +595,7 @@ function filteredCaptures() {
       entry.heightOrLeaf,
       entry.qualityFlag,
       entry.notes,
+      entry.temperatureRegime,
       entry.varietyName,
       entry.diseaseCode
     ].join(" ").toLowerCase().includes(query);
@@ -558,6 +615,7 @@ function captureCSV(entries) {
     "height_or_leaf",
     "quality_flag",
     "notes",
+    "temperature_code",
     "temperature_regime",
     "replicate",
     "variety_code",
@@ -579,6 +637,7 @@ function captureCSV(entries) {
     entry.heightOrLeaf,
     entry.qualityFlag,
     entry.notes,
+    entry.temperatureCode || temperatureCode(entry.temperatureRegime),
     entry.temperatureRegime,
     entry.replicate,
     entry.varietyCode,
@@ -596,6 +655,12 @@ function potMapCSV(pots) {
   const headers = Object.keys(pots[0]);
   const rows = pots.map((pot) => headers.map((key) => pot[key] || ""));
   return [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function potMapForEntries(entries, scope) {
+  if (scope === "all") return state.pots;
+  const potIDs = new Set(entries.map((entry) => entry.potID));
+  return state.pots.filter((pot) => pot.temperature_regime === selectedRun() || potIDs.has(pot.pot_id));
 }
 
 function csvEscape(value) {
