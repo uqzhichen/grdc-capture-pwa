@@ -4,7 +4,9 @@ Static Progressive Web App for glasshouse image capture. It is designed for GitH
 
 ## What It Does
 
-- Loads the 192-pot factorial map from `data/pot_map.csv`, separated into two 96-pot temperature runs.
+- Loads two separate 96-pot temperature runs from `data/pot_map.csv`.
+- Uses Noel Knight's confirmed Winter/Cool photo order and physical pot labels.
+- Limits pot selection to one 16-pot photo group at a time and requires confirmation before entering the next group.
 - Captures or imports phone photos.
 - Saves photos locally in browser storage with controlled filenames.
 - Lets technicians search, review, edit quality flags/notes, and delete blurry captures.
@@ -65,14 +67,14 @@ Retakes with the same filename fields get an automatic suffix, for example `_R2`
 
 ## Pot Map
 
-The bundled map uses:
+The confirmed Winter/Cool map uses:
 
-- Varieties: Maximus CL, RGT Planet, Rosalind, AGT Bunyip IA.
+- Varieties: Maximus CL, RGT Planet, Rosalind, Granite CL.
 - Disease classes: CTRL, NFNB, SFNB.
 - Fertiliser levels: LOW, HIGH.
-- Temperature regimes: Cool/Winter and Warm/Summer, selected separately in the app as 96-pot runs.
 - Replicates: 1, 2, 3, 4.
+- Six photo groups of 16 pots: Control/High, NFNB/High, SFNB/High, Control/Low, NFNB/Low, and SFNB/Low.
 
-Total: `4 x 3 x 2 x 2 x 4 = 192` pots, implemented as `96 WINTER + 96 SUMMER`.
+The Winter/Cool physical labels and treatment assignments come from the `Photo order` tab in Noel Knight's `Experiment Design and Pot ID.xlsx` workbook dated 2026-07-30. The app displays the full physical label while retaining `POC-001` through `POC-096` as the stable pot IDs and filename keys.
 
-The app defaults to one active temperature run at a time. `POC-001` to `POC-096` are Winter/Cool and `POC-097` to `POC-192` are Summer/Warm.
+The Summer/Warm run remains separate as `POC-097` through `POC-192`. Its existing map is retained until a confirmed randomised label sheet is supplied.

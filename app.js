@@ -17,6 +17,7 @@ const state = {
   pots: [],
   captures: [],
   activeEditId: null,
+  activePhotoGroup: "",
   imageUrls: [],
   deferredInstallPrompt: null
 };
@@ -26,6 +27,7 @@ const els = {
   captureCount: document.querySelector("#captureCount"),
   installButton: document.querySelector("#installButton"),
   runSelect: document.querySelector("#runSelect"),
+  blockSelect: document.querySelector("#blockSelect"),
   potSearch: document.querySelector("#potSearch"),
   potSelect: document.querySelector("#potSelect"),
   potCard: document.querySelector("#potCard"),
@@ -92,11 +94,31 @@ function bindEvents() {
   });
 
   els.runSelect.addEventListener("change", () => {
+    state.activePhotoGroup = "";
+    els.potSearch.value = "";
+    renderPhotoGroupOptions();
     renderPotOptions();
     updatePotCard();
     updateFilenamePreview();
     renderCounts();
     renderCaptureList();
+  });
+  els.blockSelect.addEventListener("change", () => {
+    const nextGroup = els.blockSelect.value;
+    if (state.activePhotoGroup && nextGroup !== state.activePhotoGroup) {
+      const confirmed = window.confirm(
+        `Stop point: start Photo Group ${nextGroup}? Confirm the next 16-pot tray has been unrandomised and is ready for imaging.`
+      );
+      if (!confirmed) {
+        els.blockSelect.value = state.activePhotoGroup;
+        return;
+      }
+    }
+    state.activePhotoGroup = nextGroup;
+    els.potSearch.value = "";
+    renderPotOptions();
+    updatePotCard();
+    updateFilenamePreview();
   });
   els.potSearch.addEventListener("input", () => {
     renderPotOptions();
@@ -195,7 +217,7 @@ async function deleteCapture(id) {
 }
 
 async function loadPotMap() {
-  const response = await fetch("./data/pot_map.csv", { cache: "no-store" });
+  const response = await fetch("./data/pot_map.csv?v=7", { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Pot map fetch failed: ${response.status}`);
   }
@@ -205,6 +227,7 @@ async function loadPotMap() {
     .map((row) => Object.fromEntries(header.map((key, index) => [key, row[index] || ""])))
     .filter((record) => record.pot_id);
   renderRunOptions();
+  renderPhotoGroupOptions();
   renderPotOptions();
   updatePotCard();
   updateFilenamePreview();
@@ -280,15 +303,60 @@ function temperatureCode(regime) {
   return cleanComponent(regime || "RUN").toUpperCase();
 }
 
+function potsForSelectedRun() {
+  const run = selectedRun();
+  return state.pots
+    .filter((pot) => pot.temperature_regime === run)
+    .sort((a, b) => Number(a.photo_order || 0) - Number(b.photo_order || 0));
+}
+
+function renderPhotoGroupOptions() {
+  const current = state.activePhotoGroup;
+  const groupedPots = new Map();
+  for (const pot of potsForSelectedRun()) {
+    const group = pot.photo_group || "1";
+    if (!groupedPots.has(group)) groupedPots.set(group, []);
+    groupedPots.get(group).push(pot);
+  }
+
+  const groups = Array.from(groupedPots.keys()).sort((a, b) => Number(a) - Number(b));
+  els.blockSelect.replaceChildren(...groups.map((group) => {
+    const pots = groupedPots.get(group);
+    const option = document.createElement("option");
+    const firstPot = pots[0];
+    const lastPot = pots[pots.length - 1];
+    const treatment = firstPot?.disease_code === "CTRL"
+      ? "Control"
+      : firstPot?.disease_code || "Run";
+    const groupSummary = firstPot?.randomised_mapping === "YES"
+      ? `${treatment} | ${firstPot.fertiliser_code}`
+      : temperatureCode(firstPot?.temperature_regime);
+    option.value = group;
+    option.textContent = `${group}/${groups.length} ${groupSummary} | ${firstPot?.pot_id || ""}-${String(lastPot?.pot_id || "").replace("POC-", "")}`;
+    return option;
+  }));
+
+  const selected = groups.includes(current) ? current : groups[0] || "";
+  els.blockSelect.value = selected;
+  state.activePhotoGroup = selected;
+}
+
+function potsForSelectedPhotoGroup() {
+  const group = els.blockSelect.value || state.activePhotoGroup;
+  return potsForSelectedRun().filter((pot) => (pot.photo_group || "1") === group);
+}
+
 function renderPotOptions() {
   const current = els.potSelect.value;
   const query = els.potSearch.value.trim().toLowerCase();
-  const currentRun = selectedRun();
-  const filtered = state.pots.filter((pot) => {
-    if (pot.temperature_regime !== currentRun) return false;
+  const filtered = potsForSelectedPhotoGroup().filter((pot) => {
     if (!query) return true;
     return [
       pot.pot_id,
+      pot.pot_label,
+      pot.short_label,
+      pot.blocked_order,
+      pot.photo_group_label,
       pot.bench,
       pot.temperature_regime,
       pot.replicate,
@@ -304,10 +372,11 @@ function renderPotOptions() {
   const selectedStillVisible = filtered.some((pot) => pot.pot_id === current);
   const selected = selectedStillVisible ? current : filtered[0]?.pot_id || "";
 
-  els.potSelect.replaceChildren(...filtered.slice(0, 96).map((pot) => {
+  els.potSelect.replaceChildren(...filtered.map((pot) => {
     const option = document.createElement("option");
     option.value = pot.pot_id;
-    option.textContent = `${pot.pot_id}  ${pot.disease_code} ${pot.variety_code} R${pot.replicate} ${pot.fertiliser_code}`;
+    const position = String(pot.photo_position || "").padStart(2, "0");
+    option.textContent = `${position}/16 - ${pot.pot_label || pot.pot_id}`;
     return option;
   }));
   els.potSelect.value = selected;
@@ -319,24 +388,47 @@ function capturesForSelectedRun() {
 }
 
 function selectedPot() {
-  return state.pots.find((pot) => pot.pot_id === els.potSelect.value && pot.temperature_regime === selectedRun())
-    || state.pots.find((pot) => pot.temperature_regime === selectedRun())
-    || state.pots[0]
-    || null;
+  const selected = state.pots.find(
+    (pot) => pot.pot_id === els.potSelect.value && pot.temperature_regime === selectedRun()
+  );
+  if (selected) return selected;
+  if (!els.potSelect.value) return null;
+  return potsForSelectedPhotoGroup()[0] || potsForSelectedRun()[0] || state.pots[0] || null;
 }
 
 function updatePotCard() {
   const pot = selectedPot();
   if (!pot) {
+    els.potCard.classList.remove("block-end");
     els.potCard.innerHTML = "<div><p class=\"pot-id\">No pot loaded</p><p class=\"pot-meta\">Check the pot map file.</p></div>";
     return;
   }
+  const groupPots = potsForSelectedPhotoGroup();
+  const isBlockEnd = Number(pot.photo_position) === groupPots.length;
+  const plantingPosition = pot.blocked_order
+    ? `Planting position ${pot.blocked_order}`
+    : "Randomised planting position not supplied";
+  const mappingWarning = pot.randomised_mapping === "YES"
+    ? ""
+    : "<p class=\"mapping-warning\">Randomised physical labels have not been supplied for this temperature run.</p>";
+  const stopPoint = isBlockEnd
+    ? `
+      <div class="block-stop">
+        <strong>STOP after this pot</strong>
+        <span>Photo Group ${escapeHtml(pot.photo_group)} is complete. Prepare and unrandomise the next 16-pot tray before selecting another group.</span>
+      </div>
+    `
+    : "";
+  els.potCard.classList.toggle("block-end", isBlockEnd);
   els.potCard.innerHTML = `
     <div>
-      <p class="pot-id">${escapeHtml(pot.pot_id)}</p>
+      <p class="pot-id">${escapeHtml(pot.pot_label || pot.pot_id)}</p>
+      <p class="pot-sequence">Photo ${escapeHtml(pot.photo_position || "1")} of ${groupPots.length} | ${escapeHtml(plantingPosition)}</p>
       <p class="pot-meta">${escapeHtml(pot.disease_code)} - ${escapeHtml(pot.disease_class)}</p>
       <p class="pot-meta">Rep ${escapeHtml(pot.replicate)} | ${escapeHtml(pot.variety_code)} ${escapeHtml(pot.variety_name)} | ${escapeHtml(pot.fertiliser_level)}</p>
       <p class="pot-meta">${escapeHtml(pot.temperature_regime)} | ${escapeHtml(pot.bench)}</p>
+      ${mappingWarning}
+      ${stopPoint}
     </div>
   `;
 }
@@ -374,6 +466,14 @@ async function handleImageInput(input) {
       relativePath: `images/${filename}`,
       capturedAt: now.toISOString(),
       potID: pot.pot_id,
+      potLabel: pot.pot_label || pot.pot_id,
+      shortLabel: pot.short_label || pot.pot_id,
+      photoOrder: pot.photo_order,
+      photoGroup: pot.photo_group,
+      photoPosition: pot.photo_position,
+      blockedOrder: pot.blocked_order,
+      photoGroupLabel: pot.photo_group_label,
+      randomisedMapping: pot.randomised_mapping,
       week: cleanComponent(els.weekSelect.value.toUpperCase()),
       cameraID: els.cameraSelect.value,
       mode,
@@ -476,7 +576,7 @@ function renderCaptureList() {
     const filename = document.createElement("strong");
     filename.textContent = entry.filename;
     const meta = document.createElement("span");
-    meta.textContent = `${entry.potID} | ${entry.mode} | ${entry.week} | ${temperatureCode(entry.temperatureRegime)} | ${formatShortDate(entry.capturedAt)}`;
+    meta.textContent = `${entry.potLabel || entry.potID} | Group ${entry.photoGroup || "-"} | ${entry.mode} | ${entry.week} | ${temperatureCode(entry.temperatureRegime)} | ${formatShortDate(entry.capturedAt)}`;
     const treatment = document.createElement("span");
     treatment.textContent = `${entry.diseaseCode || ""} ${entry.varietyCode || ""} R${entry.replicate || ""} ${entry.fertiliserCode || ""}`;
     const badge = document.createElement("span");
@@ -588,6 +688,11 @@ function filteredCaptures() {
     return [
       entry.filename,
       entry.potID,
+      entry.potLabel,
+      entry.shortLabel,
+      entry.photoGroup,
+      entry.photoPosition,
+      entry.blockedOrder,
       entry.week,
       entry.cameraID,
       entry.mode,
@@ -608,6 +713,14 @@ function captureCSV(entries) {
     "relative_path",
     "captured_at",
     "pot_id",
+    "pot_label",
+    "short_label",
+    "photo_order",
+    "photo_group",
+    "photo_position",
+    "blocked_order",
+    "photo_group_label",
+    "randomised_mapping",
     "week",
     "camera_id",
     "mode",
@@ -630,6 +743,14 @@ function captureCSV(entries) {
     entry.relativePath,
     entry.capturedAt,
     entry.potID,
+    entry.potLabel || entry.potID,
+    entry.shortLabel || entry.potID,
+    entry.photoOrder,
+    entry.photoGroup,
+    entry.photoPosition,
+    entry.blockedOrder,
+    entry.photoGroupLabel,
+    entry.randomisedMapping,
     entry.week,
     entry.cameraID,
     entry.mode,
