@@ -264,6 +264,108 @@ button:focus-visible {
   font-size: 0.82rem;
 }
 
+.protocol-progress {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.progress-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.progress-heading div {
+  display: grid;
+  gap: 2px;
+}
+
+.progress-heading span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.progress-heading strong {
+  letter-spacing: 0;
+}
+
+.progress-heading > strong {
+  color: var(--green);
+  font-size: 1.15rem;
+}
+
+.progress-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #dfe8e5;
+}
+
+.progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--teal);
+  transition: width 180ms ease;
+}
+
+.protocol-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.protocol-slot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid #bccbc8;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 8px 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.protocol-slot span {
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.protocol-slot strong {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.protocol-slot.selected {
+  border-color: var(--blue);
+  box-shadow: inset 0 0 0 1px var(--blue);
+}
+
+.protocol-slot.selected strong {
+  color: var(--blue);
+}
+
+.protocol-slot.complete {
+  border-color: #9fcbbd;
+  background: var(--green-soft);
+}
+
+.protocol-slot.complete strong {
+  color: var(--green);
+}
+
 fieldset {
   min-width: 0;
   margin: 12px 0;
@@ -285,7 +387,6 @@ fieldset {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.choice-grid[aria-label="Height level"],
 .choice-grid[aria-label="Affected leaf"] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -593,7 +694,6 @@ dialog::backdrop {
   }
 
   .choice-grid,
-  .choice-grid[aria-label="Height level"],
   .choice-grid[aria-label="Affected leaf"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -7,11 +7,23 @@ Static Progressive Web App for glasshouse image capture. It is designed for GitH
 - Loads two separate 96-pot temperature runs from `data/pot_map.csv`.
 - Uses Noel Knight's confirmed Winter/Cool photo order and physical pot labels.
 - Limits pot selection to one 16-pot photo group at a time and requires confirmation before entering the next group.
-- Captures or imports phone photos.
+- Captures or imports phone photos using the seven-image protocol for each pot.
+- Tracks the seven unique required image slots for the selected pot and imaging day.
+- Warns before leaving a partially completed pot while allowing a confirmed override.
 - Saves photos locally in browser storage with controlled filenames.
 - Lets technicians search, review, edit quality flags/notes, and delete blurry captures.
-- Exports today, filtered, or all captures as a ZIP package containing `capture_log.csv`, `pot_map.csv`, and image files. Today and filtered exports are limited to the selected temperature run.
+- Exports the current imaging event, filtered captures, or all captures as a ZIP package containing `capture_log.csv`, `pot_map.csv`, and image files. Current-event and filtered exports are limited to the selected temperature run.
 - Caches the app shell for offline use after the first successful load.
+
+## Imaging Protocol
+
+Each pot requires seven images at each imaging event:
+
+- Four whole-plant images: Front, Right, Back, and Left, all captured at fixed mid-level height H2.
+- Three close-up images of symptomatic areas on three randomly selected affected leaves: Leaf 1, Leaf 2, and Leaf 3. Frame the symptom rather than the entire leaf.
+- Keep the white background behind the pot for both image types. It does not need to be placed directly behind an individual leaf.
+
+Imaging events are Day 3 (D03), Day 7 (D07), Day 13 (D13), and Day 20 (D20). Each separate Winter/Cool or Summer/Warm run contains 96 pots, so the planned volume is 672 required images per event and 2,688 required images across all four events for one temperature run. Retakes remain in storage and export, but they do not increase the seven-slot completion progress.
 
 ## Technician Install
 
@@ -54,16 +66,16 @@ Browser storage is not a permanent archive. If a phone is lost, reset, or has br
 Whole-plant image:
 
 ```text
-POC-001_2026-07-14_W4_CAM1_FRONT_H1.jpg
+POC-001_2026-07-14_D03_CAM1_FRONT_H2.jpg
 ```
 
 Focused affected-leaf image:
 
 ```text
-POC-001_2026-07-14_W4_CAM1_AFFECTED_FL1.jpg
+POC-001_2026-07-14_D03_CAM1_AFFECTED_FL1.jpg
 ```
 
-Retakes with the same filename fields get an automatic suffix, for example `_R2`.
+Retakes with the same filename fields get an automatic suffix, for example `_R2`. Existing records created with the earlier W1-W6 schedule remain visible, searchable, and exportable.
 
 ## Pot Map
 

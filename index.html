@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#005c3d">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="GRDC Capture">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -11,7 +12,7 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="./styles.css?v=7">
+    <link rel="stylesheet" href="./styles.css?v=8">
   </head>
   <body>
     <div class="app-shell">
@@ -64,16 +65,28 @@
             </div>
           </article>
 
+          <section class="protocol-progress" id="protocolProgress" aria-labelledby="progressTitle">
+            <div class="progress-heading">
+              <div>
+                <span id="progressContext">Current pot - D03</span>
+                <strong id="progressTitle">Required captures</strong>
+              </div>
+              <strong id="potProgressCount">0/7</strong>
+            </div>
+            <div class="progress-track" role="progressbar" aria-label="Current pot capture progress" aria-valuemin="0" aria-valuemax="7" aria-valuenow="0">
+              <span id="potProgressBar"></span>
+            </div>
+            <div class="protocol-checklist" id="protocolChecklist" aria-live="polite"></div>
+          </section>
+
           <div class="field-grid">
             <label class="field">
-              <span>Week</span>
-              <select id="weekSelect">
-                <option>W1</option>
-                <option>W2</option>
-                <option>W3</option>
-                <option selected>W4</option>
-                <option>W5</option>
-                <option>W6</option>
+              <span>Imaging day</span>
+              <select id="eventSelect">
+                <option value="D03" selected>Day 3 (D03)</option>
+                <option value="D07">Day 7 (D07)</option>
+                <option value="D13">Day 13 (D13)</option>
+                <option value="D20">Day 20 (D20)</option>
               </select>
             </label>
             <label class="field">
@@ -101,12 +114,7 @@
               <label><input type="radio" name="angle" value="LEFT"><span>Left</span></label>
             </fieldset>
 
-            <fieldset class="choice-grid" aria-label="Height level">
-              <legend>Height</legend>
-              <label><input type="radio" name="height" value="H1" checked><span>H1 High</span></label>
-              <label><input type="radio" name="height" value="H2"><span>H2 Mid</span></label>
-              <label><input type="radio" name="height" value="H3"><span>H3 Low</span></label>
-            </fieldset>
+            <p class="helper-text">Capture the whole plant from each direction at fixed mid-level height H2. Keep the white background behind the pot.</p>
           </div>
 
           <div id="focusedLeafFields" hidden>
@@ -116,7 +124,7 @@
               <label><input type="radio" name="focusedLeaf" value="FL2"><span>Leaf 2</span></label>
               <label><input type="radio" name="focusedLeaf" value="FL3"><span>Leaf 3</span></label>
             </fieldset>
-            <p class="helper-text">Choose any three affected leaves from the pot. If fewer than three affected leaves are visible, use the notes field.</p>
+            <p class="helper-text">Randomly select three affected leaves. Capture a close-up of the symptomatic area, not the entire leaf. Keep the white background behind the pot; do not position it behind individual leaves.</p>
           </div>
 
           <div class="field-grid">
@@ -164,11 +172,11 @@
 
           <div class="summary-grid">
             <div>
-              <span>Today</span>
-              <strong id="todayCount">0</strong>
+              <span>Current event</span>
+              <strong id="eventCount">0/672</strong>
             </div>
             <div>
-              <span>Total</span>
+              <span>Run total</span>
               <strong id="totalCount">0</strong>
             </div>
             <div>
@@ -185,7 +193,7 @@
           </div>
 
           <div class="button-row">
-            <button class="secondary-button" id="exportTodayButton" type="button">Export Today Run ZIP</button>
+            <button class="secondary-button" id="exportEventButton" type="button">Export Current Event ZIP</button>
             <button class="secondary-button" id="exportFilteredButton" type="button">Export Filtered ZIP</button>
             <button class="secondary-button" id="exportAllButton" type="button">Export All Runs ZIP</button>
           </div>
@@ -223,6 +231,6 @@
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </div>
 
-    <script src="./app.js?v=7" type="module"></script>
+    <script src="./app.js?v=8" type="module"></script>
   </body>
 </html>

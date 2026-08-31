@@ -12,12 +12,28 @@ const QUALITY_FLAGS = [
   "other"
 ];
 
+const REQUIRED_CAPTURE_SLOTS = [
+  { key: "WP_FRONT", label: "Front - whole plant H2", mode: "Whole plant", control: "angle", value: "FRONT" },
+  { key: "WP_RIGHT", label: "Right - whole plant H2", mode: "Whole plant", control: "angle", value: "RIGHT" },
+  { key: "WP_BACK", label: "Back - whole plant H2", mode: "Whole plant", control: "angle", value: "BACK" },
+  { key: "WP_LEFT", label: "Left - whole plant H2", mode: "Whole plant", control: "angle", value: "LEFT" },
+  { key: "FL_FL1", label: "Leaf 1 - symptom close-up", mode: "Focused leaf", control: "focusedLeaf", value: "FL1" },
+  { key: "FL_FL2", label: "Leaf 2 - symptom close-up", mode: "Focused leaf", control: "focusedLeaf", value: "FL2" },
+  { key: "FL_FL3", label: "Leaf 3 - symptom close-up", mode: "Focused leaf", control: "focusedLeaf", value: "FL3" }
+];
+const REQUIRED_CAPTURES_PER_POT = REQUIRED_CAPTURE_SLOTS.length;
+const EXPECTED_POTS_PER_RUN = 96;
+const EXPECTED_CAPTURES_PER_EVENT = EXPECTED_POTS_PER_RUN * REQUIRED_CAPTURES_PER_POT;
+
 const state = {
   db: null,
   pots: [],
   captures: [],
   activeEditId: null,
+  activeRun: "",
   activePhotoGroup: "",
+  activePotID: "",
+  activeImagingDay: "",
   imageUrls: [],
   deferredInstallPrompt: null
 };
@@ -31,8 +47,13 @@ const els = {
   potSearch: document.querySelector("#potSearch"),
   potSelect: document.querySelector("#potSelect"),
   potCard: document.querySelector("#potCard"),
-  weekSelect: document.querySelector("#weekSelect"),
+  eventSelect: document.querySelector("#eventSelect"),
   cameraSelect: document.querySelector("#cameraSelect"),
+  progressContext: document.querySelector("#progressContext"),
+  potProgressCount: document.querySelector("#potProgressCount"),
+  progressTrack: document.querySelector(".progress-track"),
+  potProgressBar: document.querySelector("#potProgressBar"),
+  protocolChecklist: document.querySelector("#protocolChecklist"),
   wholePlantFields: document.querySelector("#wholePlantFields"),
   focusedLeafFields: document.querySelector("#focusedLeafFields"),
   qualitySelect: document.querySelector("#qualitySelect"),
@@ -43,11 +64,11 @@ const els = {
   cameraInput: document.querySelector("#cameraInput"),
   importInput: document.querySelector("#importInput"),
   refreshButton: document.querySelector("#refreshButton"),
-  todayCount: document.querySelector("#todayCount"),
+  eventCount: document.querySelector("#eventCount"),
   totalCount: document.querySelector("#totalCount"),
   storageEstimate: document.querySelector("#storageEstimate"),
   captureSearch: document.querySelector("#captureSearch"),
-  exportTodayButton: document.querySelector("#exportTodayButton"),
+  exportEventButton: document.querySelector("#exportEventButton"),
   exportFilteredButton: document.querySelector("#exportFilteredButton"),
   exportAllButton: document.querySelector("#exportAllButton"),
   captureList: document.querySelector("#captureList"),
@@ -72,6 +93,7 @@ async function init() {
   bindEvents();
   updateNetworkStatus();
   await loadPotMap();
+  initialiseActiveContext();
   await refreshCaptures();
   registerServiceWorker();
 }
@@ -94,18 +116,29 @@ function bindEvents() {
   });
 
   els.runSelect.addEventListener("change", () => {
+    const nextRun = els.runSelect.value;
+    if (state.activeRun && nextRun !== state.activeRun && !confirmLeavingIncompletePot()) {
+      els.runSelect.value = state.activeRun;
+      return;
+    }
+    state.activeRun = nextRun;
     state.activePhotoGroup = "";
+    state.activePotID = "";
     els.potSearch.value = "";
     renderPhotoGroupOptions();
     renderPotOptions();
-    updatePotCard();
-    updateFilenamePreview();
+    state.activePotID = els.potSelect.value;
+    renderCaptureContext();
     renderCounts();
     renderCaptureList();
   });
   els.blockSelect.addEventListener("change", () => {
     const nextGroup = els.blockSelect.value;
     if (state.activePhotoGroup && nextGroup !== state.activePhotoGroup) {
+      if (!confirmLeavingIncompletePot()) {
+        els.blockSelect.value = state.activePhotoGroup;
+        return;
+      }
       const confirmed = window.confirm(
         `Stop point: start Photo Group ${nextGroup}? Confirm the next 16-pot tray has been unrandomised and is ready for imaging.`
       );
@@ -115,31 +148,47 @@ function bindEvents() {
       }
     }
     state.activePhotoGroup = nextGroup;
+    state.activePotID = "";
     els.potSearch.value = "";
     renderPotOptions();
-    updatePotCard();
-    updateFilenamePreview();
+    state.activePotID = els.potSelect.value;
+    renderCaptureContext();
   });
   els.potSearch.addEventListener("input", () => {
     renderPotOptions();
-    updatePotCard();
-    updateFilenamePreview();
+    renderCaptureContext();
   });
   els.potSelect.addEventListener("change", () => {
-    updatePotCard();
+    const nextPotID = els.potSelect.value;
+    if (state.activePotID && nextPotID !== state.activePotID && !confirmLeavingIncompletePot()) {
+      els.potSelect.value = state.activePotID;
+      return;
+    }
+    state.activePotID = nextPotID;
+    renderCaptureContext();
+  });
+  els.eventSelect.addEventListener("change", () => {
+    const nextImagingDay = selectedImagingDay();
+    if (state.activeImagingDay && nextImagingDay !== state.activeImagingDay && !confirmLeavingIncompletePot()) {
+      els.eventSelect.value = state.activeImagingDay;
+      return;
+    }
+    state.activeImagingDay = nextImagingDay;
     updateFilenamePreview();
+    renderProtocolProgress();
+    renderCounts();
   });
 
   [
-    els.weekSelect,
     els.cameraSelect,
     els.qualitySelect,
     els.notesInput,
-    ...document.querySelectorAll("input[name='mode'], input[name='angle'], input[name='height'], input[name='focusedLeaf']")
+    ...document.querySelectorAll("input[name='mode'], input[name='angle'], input[name='focusedLeaf']")
   ].forEach((control) => {
     control.addEventListener("change", () => {
       syncModeFields();
       updateFilenamePreview();
+      renderProtocolProgress();
     });
     control.addEventListener("input", updateFilenamePreview);
   });
@@ -150,7 +199,7 @@ function bindEvents() {
   els.importInput.addEventListener("change", () => handleImageInput(els.importInput));
   els.refreshButton.addEventListener("click", refreshCaptures);
   els.captureSearch.addEventListener("input", renderCaptureList);
-  els.exportTodayButton.addEventListener("click", () => exportCaptures("today"));
+  els.exportEventButton.addEventListener("click", () => exportCaptures("event"));
   els.exportFilteredButton.addEventListener("click", () => exportCaptures("filtered"));
   els.exportAllButton.addEventListener("click", () => exportCaptures("all"));
 
@@ -170,6 +219,29 @@ function bindEvents() {
   els.deleteCaptureButton.addEventListener("click", async () => {
     await deleteActiveCapture();
   });
+}
+
+function initialiseActiveContext() {
+  state.activeRun = selectedRun();
+  state.activePhotoGroup = els.blockSelect.value;
+  state.activePotID = els.potSelect.value;
+  state.activeImagingDay = selectedImagingDay();
+  renderCaptureContext();
+}
+
+function renderCaptureContext() {
+  updatePotCard();
+  updateFilenamePreview();
+  renderProtocolProgress();
+}
+
+function confirmLeavingIncompletePot() {
+  if (!state.activePotID || !state.activeImagingDay) return true;
+  const { completed } = progressForPot(state.activePotID, state.activeImagingDay);
+  if (completed === 0 || completed === REQUIRED_CAPTURES_PER_POT) return true;
+  return window.confirm(
+    `${state.activePotID} has ${completed}/${REQUIRED_CAPTURES_PER_POT} required images for ${state.activeImagingDay}. Leave this pot anyway?`
+  );
 }
 
 function openDatabase() {
@@ -217,7 +289,7 @@ async function deleteCapture(id) {
 }
 
 async function loadPotMap() {
-  const response = await fetch("./data/pot_map.csv?v=7", { cache: "no-store" });
+  const response = await fetch("./data/pot_map.csv?v=8", { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Pot map fetch failed: ${response.status}`);
   }
@@ -369,16 +441,31 @@ function renderPotOptions() {
     ].join(" ").toLowerCase().includes(query);
   });
 
-  const selectedStillVisible = filtered.some((pot) => pot.pot_id === current);
-  const selected = selectedStillVisible ? current : filtered[0]?.pot_id || "";
+  const currentVisible = filtered.some((pot) => pot.pot_id === current);
+  const activeVisible = filtered.some((pot) => pot.pot_id === state.activePotID);
+  const selected = currentVisible
+    ? current
+    : activeVisible
+      ? state.activePotID
+      : state.activePotID
+        ? ""
+        : filtered[0]?.pot_id || "";
 
-  els.potSelect.replaceChildren(...filtered.map((pot) => {
+  const options = filtered.map((pot) => {
     const option = document.createElement("option");
     option.value = pot.pot_id;
     const position = String(pot.photo_position || "").padStart(2, "0");
     option.textContent = `${position}/16 - ${pot.pot_label || pot.pot_id}`;
     return option;
-  }));
+  });
+  if (!selected && filtered.length) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select a matching pot";
+    placeholder.disabled = true;
+    options.unshift(placeholder);
+  }
+  els.potSelect.replaceChildren(...options);
   els.potSelect.value = selected;
 }
 
@@ -387,12 +474,100 @@ function capturesForSelectedRun() {
   return state.captures.filter((entry) => entry.temperatureRegime === run);
 }
 
+function selectedImagingDay() {
+  return cleanComponent(els.eventSelect.value.toUpperCase()) || "D03";
+}
+
+function entryImagingDay(entry) {
+  return cleanComponent(String(entry.imagingDay || entry.week || "").toUpperCase());
+}
+
+function capturesForSelectedEvent() {
+  const imagingDay = selectedImagingDay();
+  return capturesForSelectedRun().filter((entry) => entryImagingDay(entry) === imagingDay);
+}
+
+function captureSlotKey(entry) {
+  if (entry.mode === "Whole plant" && entry.heightOrLeaf === "H2") {
+    const key = `WP_${entry.angle}`;
+    return REQUIRED_CAPTURE_SLOTS.some((slot) => slot.key === key) ? key : "";
+  }
+  if (entry.mode === "Focused leaf") {
+    const key = `FL_${entry.heightOrLeaf}`;
+    return REQUIRED_CAPTURE_SLOTS.some((slot) => slot.key === key) ? key : "";
+  }
+  return "";
+}
+
+function selectedCaptureSlotKey() {
+  return getRadioValue("mode") === "Whole plant"
+    ? `WP_${getRadioValue("angle")}`
+    : `FL_${getRadioValue("focusedLeaf")}`;
+}
+
+function progressForPot(potID, imagingDay) {
+  const completedKeys = new Set(
+    state.captures
+      .filter((entry) => entry.potID === potID && entryImagingDay(entry) === imagingDay)
+      .map(captureSlotKey)
+      .filter(Boolean)
+  );
+  return {
+    completed: completedKeys.size,
+    slots: REQUIRED_CAPTURE_SLOTS.map((slot) => ({
+      ...slot,
+      complete: completedKeys.has(slot.key)
+    }))
+  };
+}
+
+function selectCaptureSlot(slot) {
+  const modeControl = document.querySelector(`input[name="mode"][value="${slot.mode}"]`);
+  const slotControl = document.querySelector(`input[name="${slot.control}"][value="${slot.value}"]`);
+  if (modeControl) modeControl.checked = true;
+  if (slotControl) slotControl.checked = true;
+  syncModeFields();
+  updateFilenamePreview();
+  renderProtocolProgress();
+}
+
+function renderProtocolProgress() {
+  const pot = selectedPot();
+  const imagingDay = selectedImagingDay();
+  const progress = pot
+    ? progressForPot(pot.pot_id, imagingDay)
+    : { completed: 0, slots: REQUIRED_CAPTURE_SLOTS.map((slot) => ({ ...slot, complete: false })) };
+  const currentSlotKey = selectedCaptureSlotKey();
+
+  els.progressContext.textContent = pot ? `${pot.pot_id} - ${imagingDay}` : `No pot - ${imagingDay}`;
+  els.potProgressCount.textContent = `${progress.completed}/${REQUIRED_CAPTURES_PER_POT}`;
+  els.progressTrack.setAttribute("aria-valuenow", String(progress.completed));
+  els.potProgressBar.style.width = `${(progress.completed / REQUIRED_CAPTURES_PER_POT) * 100}%`;
+
+  const fragment = document.createDocumentFragment();
+  for (const slot of progress.slots) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `protocol-slot${slot.complete ? " complete" : ""}${slot.key === currentSlotKey ? " selected" : ""}`;
+    item.addEventListener("click", () => selectCaptureSlot(slot));
+
+    const label = document.createElement("span");
+    label.textContent = slot.label;
+    const status = document.createElement("strong");
+    status.textContent = slot.complete ? "Done" : slot.key === currentSlotKey ? "Selected" : "Needed";
+    item.append(label, status);
+    fragment.append(item);
+  }
+  els.protocolChecklist.replaceChildren(fragment);
+}
+
 function selectedPot() {
+  const selectedID = els.potSelect.value || state.activePotID;
   const selected = state.pots.find(
-    (pot) => pot.pot_id === els.potSelect.value && pot.temperature_regime === selectedRun()
+    (pot) => pot.pot_id === selectedID && pot.temperature_regime === selectedRun()
   );
   if (selected) return selected;
-  if (!els.potSelect.value) return null;
+  if (!selectedID) return null;
   return potsForSelectedPhotoGroup()[0] || potsForSelectedRun()[0] || state.pots[0] || null;
 }
 
@@ -474,11 +649,11 @@ async function handleImageInput(input) {
       blockedOrder: pot.blocked_order,
       photoGroupLabel: pot.photo_group_label,
       randomisedMapping: pot.randomised_mapping,
-      week: cleanComponent(els.weekSelect.value.toUpperCase()),
+      imagingDay: selectedImagingDay(),
       cameraID: els.cameraSelect.value,
       mode,
       angle: isWholePlant ? getRadioValue("angle") : "NA",
-      heightOrLeaf: isWholePlant ? getRadioValue("height") : getRadioValue("focusedLeaf"),
+      heightOrLeaf: isWholePlant ? "H2" : getRadioValue("focusedLeaf"),
       qualityFlag: els.qualitySelect.value,
       notes: els.notesInput.value.trim(),
       temperatureCode: temperatureCode(pot.temperature_regime),
@@ -506,13 +681,13 @@ async function handleImageInput(input) {
 
 function makeFilename(potID, date, includeExtension) {
   const dateString = formatDate(date);
-  const week = cleanComponent(els.weekSelect.value.toUpperCase()) || "W0";
+  const imagingDay = selectedImagingDay();
   const cameraID = cleanComponent(els.cameraSelect.value.toUpperCase()) || "CAM1";
   const mode = getRadioValue("mode");
   const suffix = mode === "Whole plant"
-    ? `${getRadioValue("angle")}_${getRadioValue("height")}`
+    ? `${getRadioValue("angle")}_H2`
     : `AFFECTED_${getRadioValue("focusedLeaf")}`;
-  return `${cleanComponent(potID)}_${dateString}_${week}_${cameraID}_${suffix}${includeExtension ? ".jpg" : ".jpg"}`;
+  return `${cleanComponent(potID)}_${dateString}_${imagingDay}_${cameraID}_${suffix}${includeExtension ? ".jpg" : ".jpg"}`;
 }
 
 async function uniqueFilename(initial) {
@@ -531,17 +706,26 @@ async function uniqueFilename(initial) {
 async function refreshCaptures() {
   state.captures = (await getAllCaptures()).sort((a, b) => b.capturedAt.localeCompare(a.capturedAt));
   renderCounts();
+  renderProtocolProgress();
   renderCaptureList();
   updateStorageEstimate();
 }
 
 function renderCounts() {
   const inRun = capturesForSelectedRun();
-  const today = inRun.filter((entry) => isToday(entry.capturedAt));
-  els.todayCount.textContent = String(today.length);
+  const inEvent = capturesForSelectedEvent();
+  const completedSlots = new Set(
+    inEvent
+      .map((entry) => {
+        const slotKey = captureSlotKey(entry);
+        return slotKey ? `${entry.potID}|${slotKey}` : "";
+      })
+      .filter(Boolean)
+  ).size;
+  els.eventCount.textContent = `${completedSlots}/${EXPECTED_CAPTURES_PER_EVENT}`;
   els.totalCount.textContent = String(inRun.length);
-  els.captureCount.textContent = `${inRun.length} ${temperatureCode(selectedRun())} captures`;
-  els.exportTodayButton.disabled = today.length === 0;
+  els.captureCount.textContent = `${completedSlots}/${EXPECTED_CAPTURES_PER_EVENT} ${temperatureCode(selectedRun())} ${selectedImagingDay()}`;
+  els.exportEventButton.disabled = inEvent.length === 0;
   els.exportAllButton.disabled = state.captures.length === 0;
   els.exportFilteredButton.disabled = inRun.length === 0;
 }
@@ -550,7 +734,6 @@ function renderCaptureList() {
   state.imageUrls.forEach((url) => URL.revokeObjectURL(url));
   state.imageUrls = [];
 
-  const query = els.captureSearch.value.trim().toLowerCase();
   const captures = filteredCaptures();
   els.exportFilteredButton.disabled = captures.length === 0;
 
@@ -576,7 +759,7 @@ function renderCaptureList() {
     const filename = document.createElement("strong");
     filename.textContent = entry.filename;
     const meta = document.createElement("span");
-    meta.textContent = `${entry.potLabel || entry.potID} | Group ${entry.photoGroup || "-"} | ${entry.mode} | ${entry.week} | ${temperatureCode(entry.temperatureRegime)} | ${formatShortDate(entry.capturedAt)}`;
+    meta.textContent = `${entry.potLabel || entry.potID} | Group ${entry.photoGroup || "-"} | ${entry.mode} | ${entryImagingDay(entry) || "-"} | ${temperatureCode(entry.temperatureRegime)} | ${formatShortDate(entry.capturedAt)}`;
     const treatment = document.createElement("span");
     treatment.textContent = `${entry.diseaseCode || ""} ${entry.varietyCode || ""} R${entry.replicate || ""} ${entry.fertiliserCode || ""}`;
     const badge = document.createElement("span");
@@ -629,8 +812,8 @@ async function deleteActiveCapture() {
 }
 
 async function exportCaptures(scope) {
-  const entries = scope === "today"
-    ? capturesForSelectedRun().filter((entry) => isToday(entry.capturedAt))
+  const entries = scope === "event"
+    ? capturesForSelectedEvent()
     : scope === "filtered"
       ? filteredCaptures()
       : state.captures;
@@ -643,9 +826,8 @@ async function exportCaptures(scope) {
     setExportBusy(true);
     const sorted = [...entries].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
     const runLabel = scope === "all" ? "ALL_RUNS" : temperatureCode(selectedRun());
-    const label = scope === "today" ? formatDate(new Date()) : scope;
-    const week = cleanComponent(els.weekSelect.value.toUpperCase());
-    const packageName = `GRDC_Captures_${runLabel}_${label}${week ? `_${week}` : ""}.zip`;
+    const label = scope === "event" ? selectedImagingDay() : scope;
+    const packageName = `GRDC_Captures_${runLabel}_${label}.zip`;
     const csv = captureCSV(sorted);
     const potMap = potMapCSV(potMapForEntries(sorted, scope));
     const files = [
@@ -673,10 +855,10 @@ async function exportCaptures(scope) {
 }
 
 function setExportBusy(isBusy) {
-  els.exportTodayButton.disabled = isBusy;
+  els.exportEventButton.disabled = isBusy;
   els.exportFilteredButton.disabled = isBusy;
   els.exportAllButton.disabled = isBusy;
-  els.exportTodayButton.textContent = isBusy ? "Preparing ZIP" : "Export Today Run ZIP";
+  els.exportEventButton.textContent = isBusy ? "Preparing ZIP" : "Export Current Event ZIP";
   els.exportFilteredButton.textContent = isBusy ? "Preparing ZIP" : "Export Filtered ZIP";
   els.exportAllButton.textContent = isBusy ? "Preparing ZIP" : "Export All Runs ZIP";
 }
@@ -693,7 +875,7 @@ function filteredCaptures() {
       entry.photoGroup,
       entry.photoPosition,
       entry.blockedOrder,
-      entry.week,
+      entryImagingDay(entry),
       entry.cameraID,
       entry.mode,
       entry.angle,
@@ -721,7 +903,7 @@ function captureCSV(entries) {
     "blocked_order",
     "photo_group_label",
     "randomised_mapping",
-    "week",
+    "imaging_day",
     "camera_id",
     "mode",
     "angle",
@@ -751,7 +933,7 @@ function captureCSV(entries) {
     entry.blockedOrder,
     entry.photoGroupLabel,
     entry.randomisedMapping,
-    entry.week,
+    entryImagingDay(entry),
     entry.cameraID,
     entry.mode,
     entry.angle,
@@ -957,10 +1139,6 @@ function formatDate(date) {
 function formatShortDate(isoDate) {
   const date = new Date(isoDate);
   return `${formatDate(date)} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function isToday(isoDate) {
-  return formatDate(new Date(isoDate)) === formatDate(new Date());
 }
 
 function formatBytes(bytes) {
