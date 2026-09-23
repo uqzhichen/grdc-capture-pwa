@@ -34,6 +34,8 @@ const state = {
   activePhotoGroup: "",
   activePotID: "",
   activeImagingDay: "",
+  pendingCapture: null,
+  savingCapture: false,
   imageUrls: [],
   deferredInstallPrompt: null
 };
@@ -140,7 +142,7 @@ function bindEvents() {
         return;
       }
       const confirmed = window.confirm(
-        `Stop point: start Photo Group ${nextGroup}? Confirm the next 16-pot tray has been unrandomised and is ready for imaging.`
+        `Stop point: start Photo Group ${nextGroup}? Confirm the next 16-pot tray is ready for imaging.`
       );
       if (!confirmed) {
         els.blockSelect.value = state.activePhotoGroup;
@@ -160,8 +162,11 @@ function bindEvents() {
   });
   els.potSelect.addEventListener("change", () => {
     const nextPotID = els.potSelect.value;
-    if (state.activePotID && nextPotID !== state.activePotID && !confirmLeavingIncompletePot()) {
-      els.potSelect.value = state.activePotID;
+    if (nextPotID !== state.activePotID &&
+        (!confirmLeavingIncompletePot() || !confirmReturningToPot(nextPotID))) {
+      els.potSearch.value = "";
+      els.potSelect.value = "";
+      renderPotOptions();
       return;
     }
     state.activePotID = nextPotID;
@@ -193,10 +198,13 @@ function bindEvents() {
     control.addEventListener("input", updateFilenamePreview);
   });
 
-  els.captureButton.addEventListener("click", () => els.cameraInput.click());
-  els.importButton.addEventListener("click", () => els.importInput.click());
+  els.captureButton.addEventListener("click", () => requestImageCapture(els.cameraInput));
+  els.importButton.addEventListener("click", () => requestImageCapture(els.importInput));
   els.cameraInput.addEventListener("change", () => handleImageInput(els.cameraInput));
   els.importInput.addEventListener("change", () => handleImageInput(els.importInput));
+  [els.cameraInput, els.importInput].forEach((input) => {
+    input.addEventListener("cancel", () => { state.pendingCapture = null; });
+  });
   els.refreshButton.addEventListener("click", refreshCaptures);
   els.captureSearch.addEventListener("input", renderCaptureList);
   els.exportEventButton.addEventListener("click", () => exportCaptures("event"));
@@ -241,6 +249,20 @@ function confirmLeavingIncompletePot() {
   if (completed === 0 || completed === REQUIRED_CAPTURES_PER_POT) return true;
   return window.confirm(
     `${state.activePotID} has ${completed}/${REQUIRED_CAPTURES_PER_POT} required images for ${state.activeImagingDay}. Leave this pot anyway?`
+  );
+}
+
+function confirmReturningToPot(potID) {
+  const pot = state.pots.find((record) => record.pot_id === potID);
+  if (!pot) return true;
+  const imagingDay = selectedImagingDay();
+  const existing = state.captures.filter((entry) =>
+    entry.potID === potID && entryImagingDay(entry) === imagingDay &&
+    entry.temperatureRegime === pot.temperature_regime
+  );
+  if (!existing.length) return true;
+  return window.confirm(
+    `Already photographed: ${pot.pot_label || potID}\n${existing.length} image(s) saved for ${imagingDay} on this device.\n\nCheck the physical pot label. Continue with this pot?`
   );
 }
 
@@ -289,20 +311,50 @@ async function deleteCapture(id) {
 }
 
 async function loadPotMap() {
-  const response = await fetch("./data/pot_map.csv?v=8", { cache: "no-store" });
+  const response = await fetch("./data/pot_map.csv?v=9", { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Pot map fetch failed: ${response.status}`);
   }
   const rows = parseCSV(await response.text());
   const header = rows.shift();
-  state.pots = rows
+  state.pots = orderPotMap(rows
     .map((row) => Object.fromEntries(header.map((key, index) => [key, row[index] || ""])))
-    .filter((record) => record.pot_id);
+    .filter((record) => record.pot_id));
   renderRunOptions();
   renderPhotoGroupOptions();
   renderPotOptions();
   updatePotCard();
   updateFilenamePreview();
+}
+
+function leadingLabelNumber(pot) {
+  const match = String(pot.pot_label || "").match(/^\s*(\d+)[_-]/);
+  return match ? Number(match[1]) : null;
+}
+
+function orderPotMap(pots) {
+  const runs = [...new Set(pots.map((pot) => pot.temperature_regime))];
+  return runs.flatMap((run) => {
+    const positions = new Map();
+    return pots.filter((pot) => pot.temperature_regime === run)
+      .sort((a, b) => Number(a.photo_group || 1) - Number(b.photo_group || 1) ||
+        (leadingLabelNumber(a) ?? Number(a.photo_order)) -
+          (leadingLabelNumber(b) ?? Number(b.photo_order)) ||
+        a.pot_id.localeCompare(b.pot_id))
+      .map((pot, index) => {
+        const group = pot.photo_group || "1";
+        const position = (positions.get(group) || 0) + 1;
+        positions.set(group, position);
+        // Recompute sequence fields together so UI, STOP markers and exports agree.
+        return {
+          ...pot,
+          photo_order: String(index + 1),
+          photo_position: String(position),
+          notes: leadingLabelNumber(pot) === null ? pot.notes :
+            String(pot.notes || "").replace("photograph in Pot Number order", "photograph in leading label number order")
+        };
+      });
+  });
 }
 
 function parseCSV(text) {
@@ -404,7 +456,12 @@ function renderPhotoGroupOptions() {
       ? `${treatment} | ${firstPot.fertiliser_code}`
       : temperatureCode(firstPot?.temperature_regime);
     option.value = group;
-    option.textContent = `${group}/${groups.length} ${groupSummary} | ${firstPot?.pot_id || ""}-${String(lastPot?.pot_id || "").replace("POC-", "")}`;
+    const firstNumber = leadingLabelNumber(firstPot);
+    const lastNumber = leadingLabelNumber(lastPot);
+    const range = firstNumber !== null && lastNumber !== null
+      ? `Labels ${String(firstNumber).padStart(2, "0")}-${String(lastNumber).padStart(2, "0")}`
+      : `${firstPot?.pot_id || ""}-${String(lastPot?.pot_id || "").replace("POC-", "")}`;
+    option.textContent = `${group}/${groups.length} ${groupSummary} | ${range}`;
     return option;
   }));
 
@@ -590,7 +647,7 @@ function updatePotCard() {
     ? `
       <div class="block-stop">
         <strong>STOP after this pot</strong>
-        <span>Photo Group ${escapeHtml(pot.photo_group)} is complete. Prepare and unrandomise the next 16-pot tray before selecting another group.</span>
+        <span>Last pot in Photo Group ${escapeHtml(pot.photo_group)}. Finish this pot, then prepare the next 16-pot tray before selecting another group.</span>
       </div>
     `
     : "";
@@ -616,25 +673,85 @@ function syncModeFields() {
 
 function updateFilenamePreview() {
   const pot = selectedPot();
-  els.filenamePreview.textContent = pot ? makeFilename(pot.pot_id, new Date(), false) : "-";
+  els.filenamePreview.textContent = pot ? makeFilename(pot.pot_id, new Date(), captureDetails()) : "-";
+}
+
+function captureDetails() {
+  const pot = selectedPot();
+  if (!pot) return null;
+  const mode = getRadioValue("mode");
+  return {
+    pot,
+    potID: pot.pot_id,
+    temperatureRegime: pot.temperature_regime,
+    imagingDay: selectedImagingDay(),
+    cameraID: els.cameraSelect.value,
+    mode,
+    angle: mode === "Whole plant" ? getRadioValue("angle") : "NA",
+    heightOrLeaf: mode === "Whole plant" ? "H2" : getRadioValue("focusedLeaf"),
+    qualityFlag: els.qualitySelect.value,
+    notes: els.notesInput.value.trim()
+  };
+}
+
+function duplicateCaptures(entries, details) {
+  return entries.filter((entry) =>
+    entry.potID === details.potID &&
+    entry.temperatureRegime === details.temperatureRegime &&
+    entryImagingDay(entry) === details.imagingDay &&
+    captureSlotKey(entry) === captureSlotKey(details)
+  );
+}
+
+function confirmDuplicateCapture(details, count) {
+  const slot = REQUIRED_CAPTURE_SLOTS.find((item) => item.key === captureSlotKey(details));
+  return window.confirm(
+    `Possible duplicate photo\n${details.pot.pot_label || details.potID}\n${details.imagingDay} - ${slot?.label || details.mode}\n\n${count} image(s) already saved for this view on this device. Check the pot label and view.\n\nOK: keep an intentional retake. Cancel: stop and check the selection. Existing photos will be kept.`
+  );
+}
+
+function requestImageCapture(input) {
+  if (state.savingCapture) return;
+  state.pendingCapture = null;
+  const details = captureDetails();
+  if (!details) {
+    showToast("No pot selected.");
+    return;
+  }
+  const duplicates = duplicateCaptures(state.captures, details);
+  if (duplicates.length && !confirmDuplicateCapture(details, duplicates.length)) return;
+  // Keep the chosen pot and view fixed while the phone's camera/picker is open.
+  state.pendingCapture = { input, details, approvedIDs: new Set(duplicates.map((entry) => entry.id)) };
+  input.click();
 }
 
 async function handleImageInput(input) {
   const file = input.files?.[0];
   input.value = "";
-  if (!file) return;
-
-  const pot = selectedPot();
-  if (!pot) {
+  const pending = state.pendingCapture?.input === input ? state.pendingCapture : null;
+  state.pendingCapture = null;
+  if (!file || state.savingCapture) return;
+  const details = pending?.details || captureDetails();
+  if (!details) {
     showToast("No pot selected.");
     return;
   }
 
+  state.savingCapture = true;
+  els.captureButton.disabled = true;
+  els.importButton.disabled = true;
   try {
+    const existing = await getAllCaptures();
+    const duplicates = duplicateCaptures(existing, details);
+    // Recheck persisted records in case another tab saved a photo in the meantime.
+    if (duplicates.some((entry) => !pending?.approvedIDs.has(entry.id)) &&
+        !confirmDuplicateCapture(details, duplicates.length)) {
+      showToast("Duplicate cancelled. Existing photos were kept.");
+      return;
+    }
+    const { pot } = details;
     const now = new Date();
-    const filename = await uniqueFilename(makeFilename(pot.pot_id, now, true));
-    const mode = getRadioValue("mode");
-    const isWholePlant = mode === "Whole plant";
+    const filename = uniqueFilename(makeFilename(pot.pot_id, now, details), existing);
     const entry = {
       id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       filename,
@@ -649,13 +766,13 @@ async function handleImageInput(input) {
       blockedOrder: pot.blocked_order,
       photoGroupLabel: pot.photo_group_label,
       randomisedMapping: pot.randomised_mapping,
-      imagingDay: selectedImagingDay(),
-      cameraID: els.cameraSelect.value,
-      mode,
-      angle: isWholePlant ? getRadioValue("angle") : "NA",
-      heightOrLeaf: isWholePlant ? "H2" : getRadioValue("focusedLeaf"),
-      qualityFlag: els.qualitySelect.value,
-      notes: els.notesInput.value.trim(),
+      imagingDay: details.imagingDay,
+      cameraID: details.cameraID,
+      mode: details.mode,
+      angle: details.angle,
+      heightOrLeaf: details.heightOrLeaf,
+      qualityFlag: details.qualityFlag,
+      notes: details.notes,
       temperatureCode: temperatureCode(pot.temperature_regime),
       temperatureRegime: pot.temperature_regime,
       replicate: pot.replicate,
@@ -676,22 +793,24 @@ async function handleImageInput(input) {
   } catch (error) {
     console.error(error);
     showToast("Could not save the image.");
+  } finally {
+    state.savingCapture = false;
+    els.captureButton.disabled = false;
+    els.importButton.disabled = false;
   }
 }
 
-function makeFilename(potID, date, includeExtension) {
+function makeFilename(potID, date, details) {
   const dateString = formatDate(date);
-  const imagingDay = selectedImagingDay();
-  const cameraID = cleanComponent(els.cameraSelect.value.toUpperCase()) || "CAM1";
-  const mode = getRadioValue("mode");
-  const suffix = mode === "Whole plant"
-    ? `${getRadioValue("angle")}_H2`
-    : `AFFECTED_${getRadioValue("focusedLeaf")}`;
-  return `${cleanComponent(potID)}_${dateString}_${imagingDay}_${cameraID}_${suffix}${includeExtension ? ".jpg" : ".jpg"}`;
+  const cameraID = cleanComponent(details.cameraID.toUpperCase()) || "CAM1";
+  const suffix = details.mode === "Whole plant"
+    ? `${details.angle}_H2`
+    : `AFFECTED_${details.heightOrLeaf}`;
+  return `${cleanComponent(potID)}_${dateString}_${details.imagingDay}_${cameraID}_${suffix}.jpg`;
 }
 
-async function uniqueFilename(initial) {
-  const existing = new Set((await getAllCaptures()).map((entry) => entry.filename));
+function uniqueFilename(initial, entries) {
+  const existing = new Set(entries.map((entry) => entry.filename));
   if (!existing.has(initial)) return initial;
   const dot = initial.lastIndexOf(".");
   const stem = dot > -1 ? initial.slice(0, dot) : initial;
